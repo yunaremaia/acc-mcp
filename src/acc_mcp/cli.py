@@ -6,6 +6,8 @@ import argparse
 import json
 import sys
 
+import yaml
+
 from acc_mcp import __version__
 from acc_mcp.models import MCPTool
 from acc_mcp.parser import ACCParser
@@ -85,9 +87,25 @@ def cmd_check(args: argparse.Namespace) -> int:
     return 1
 
 
+def cmd_validate_policy(args: argparse.Namespace) -> int:
+    """Validate a policy file without starting a gateway."""
+    try:
+        Policy.from_yaml(args.validate_policy)
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        print(f"Invalid policy: {exc}", file=sys.stderr)
+        return 2
+    print(f"Policy is valid: {args.validate_policy}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="acc-mcp", description="ACC v1 MCP binding")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument(
+        "--validate-policy",
+        metavar="PATH",
+        help="Validate a YAML policy file without starting the gateway",
+    )
     subparsers = parser.add_subparsers(dest="command")
 
     # inspect
@@ -108,6 +126,8 @@ def main() -> int:
     check_parser.set_defaults(func=cmd_check)
 
     args = parser.parse_args()
+    if args.validate_policy:
+        return cmd_validate_policy(args)
     if args.command is None:
         parser.print_help()
         return 1

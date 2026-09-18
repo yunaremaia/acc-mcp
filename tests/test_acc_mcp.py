@@ -101,6 +101,40 @@ class TestRiskEngine:
 
 
 class TestGateway:
+    def test_policy_from_yaml_empty(self, tmp_path):
+        path = tmp_path / "policy.yaml"
+        path.write_text("")
+
+        assert Policy.from_yaml(path).risk_overrides == {}
+
+    def test_policy_from_yaml_valid_and_normalizes_blocked_tools(self, tmp_path):
+        path = tmp_path / "policy.yaml"
+        path.write_text(
+            "risk-overrides:\n"
+            "  fs.delete: critical\n"
+            "blocked-tools:\n"
+            "  - delete_file\n"
+        )
+
+        policy = Policy.from_yaml(path)
+
+        assert policy.risk_overrides == {"fs.delete": RiskLevel.CRITICAL}
+        assert policy.block_tools == ["delete_file"]
+
+    def test_policy_from_yaml_rejects_unknown_keys(self, tmp_path):
+        path = tmp_path / "policy.yaml"
+        path.write_text("risk_overdes:\n  fs.delete: critical\n")
+
+        with pytest.raises(ValueError, match="Unknown policy key"):
+            Policy.from_yaml(path)
+
+    def test_policy_from_yaml_rejects_invalid_risk_level(self, tmp_path):
+        path = tmp_path / "policy.yaml"
+        path.write_text("risk_overrides:\n  fs.delete: extreme\n")
+
+        with pytest.raises(ValueError, match="Valid levels: critical, high, low, medium"):
+            Policy.from_yaml(path)
+
     def test_evaluate_allowed(self):
         gateway = Gateway()
         tool = MCPTool(name="read_file", description="Read a file")
@@ -242,6 +276,22 @@ class TestDriftDetector:
 
 
 class TestCLI:
+    def test_validate_policy(self, tmp_path, capsys):
+        path = tmp_path / "policy.yaml"
+        path.write_text("block_tools:\n  - delete_file\n")
+
+        from acc_mcp.cli import main
+        import sys
+        old_argv = sys.argv
+        try:
+            sys.argv = ["acc-mcp", "--validate-policy", str(path)]
+            ret = main()
+        finally:
+            sys.argv = old_argv
+
+        assert ret == 0
+        assert "Policy is valid" in capsys.readouterr().out
+
     def test_inspect(self, tmp_path, capsys):
         tools = [
             {

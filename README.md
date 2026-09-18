@@ -92,11 +92,18 @@ risk_overrides:
   "fs.delete": critical
   "fs.read": low
 
-approval_required:
-  - scope: "fs.delete"
-    prompt: "Confirm deletion of {path}"
-  - scope: "shell.execute"
-    prompt: "Execute: {command}"
+approval_required_scopes:
+  - "fs.delete"
+approval_required_tools:
+  - "execute_command"
+block_tools:
+  - "delete_all"
+```
+
+Validate a policy before starting the gateway:
+
+```bash
+acc-mcp --validate-policy acc-mcp.yaml
 ```
 
 ## Drift Detection
