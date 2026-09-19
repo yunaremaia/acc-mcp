@@ -16,6 +16,8 @@ from acc_mcp.parser import ACCParser
 from acc_mcp.gateway import Gateway, Policy
 from acc_mcp.risk import RiskEngine
 from acc_mcp.drift import DriftDetector
+from acc_mcp.proxy import MCPProxy
+from acc_mcp.transport import MCPTransport, StdioTransport, StreamableHTTPTransport
 
 __version__ = "0.1.0"
 
@@ -34,4 +36,8 @@ __all__ = [
     "Policy",
     "RiskEngine",
     "DriftDetector",
+    "MCPProxy",
+    "MCPTransport",
+    "StdioTransport",
+    "StreamableHTTPTransport",
 ]
