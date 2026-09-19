@@ -21,6 +21,14 @@ from acc_mcp.risk import RiskEngine
 class Policy:
     """Risk and approval policy configuration."""
 
+    VALID_RISK_LEVELS = {level.value for level in RiskLevel}
+    KNOWN_POLICY_KEYS = {
+        "risk_overrides",
+        "approval_required_scopes",
+        "approval_required_tools",
+        "block_tools",
+    }
+
     def __init__(
         self,
         risk_overrides: dict[str, RiskLevel] | None = None,
@@ -38,14 +46,57 @@ class Policy:
         """Load policy from a YAML file."""
         with open(path) as f:
             data = yaml.safe_load(f) or {}
+
+        if not isinstance(data, dict):
+            raise ValueError("Policy YAML must contain a mapping at the top level")
+
+        normalized_data: dict[str, Any] = {}
+        for key, value in data.items():
+            if not isinstance(key, str):
+                raise ValueError(f"Policy keys must be strings, got {key!r}")
+            normalized_key = key.replace("-", "_")
+            if normalized_key == "blocked_tools":
+                normalized_key = "block_tools"
+            if normalized_key in normalized_data:
+                raise ValueError(f"Duplicate policy key after normalization: '{key}'")
+            normalized_data[normalized_key] = value
+
+        unknown = set(normalized_data) - cls.KNOWN_POLICY_KEYS
+        if unknown:
+            valid_keys = ", ".join(sorted(cls.KNOWN_POLICY_KEYS))
+            unknown_keys = ", ".join(sorted(unknown))
+            raise ValueError(
+                f"Unknown policy key(s): {unknown_keys}. Valid keys: {valid_keys}"
+            )
+
+        data = normalized_data
         risk_overrides = {}
-        for scope, level in data.get("risk_overrides", {}).items():
+        raw_risk_overrides = data.get("risk_overrides", {})
+        if not isinstance(raw_risk_overrides, dict):
+            raise ValueError("Policy key 'risk_overrides' must be a mapping")
+        for scope, level in raw_risk_overrides.items():
+            if not isinstance(scope, str):
+                raise ValueError(f"Risk override scopes must be strings, got {scope!r}")
+            if not isinstance(level, str) or level not in cls.VALID_RISK_LEVELS:
+                valid_levels = ", ".join(sorted(cls.VALID_RISK_LEVELS))
+                raise ValueError(
+                    f"Invalid risk level {level!r} for scope '{scope}'. "
+                    f"Valid levels: {valid_levels}"
+                )
             risk_overrides[scope] = RiskLevel(level)
+
+        list_values = {}
+        for key in ("approval_required_scopes", "approval_required_tools", "block_tools"):
+            value = data.get(key, [])
+            if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+                raise ValueError(f"Policy key '{key}' must be a list of strings")
+            list_values[key] = value
+
         return cls(
             risk_overrides=risk_overrides,
-            approval_scopes=data.get("approval_required_scopes", []),
-            approval_tools=data.get("approval_required_tools", []),
-            block_tools=data.get("blocked_tools", []),
+            approval_scopes=list_values["approval_required_scopes"],
+            approval_tools=list_values["approval_required_tools"],
+            block_tools=list_values["block_tools"],
         )
 
     @classmethod
