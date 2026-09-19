@@ -132,6 +132,25 @@ acc-mcp gateway \
   --policy acc-mcp.yaml
 ```
 
+The live `serve` command proxies an MCP server and evaluates every `tools/call`
+against the policy before forwarding it:
+
+```bash
+# stdio upstream
+acc-mcp serve --server-cmd "npx -y @modelcontextprotocol/server-filesystem /tmp" \
+  --policy acc-mcp.yaml --report-json decisions.json
+
+# Streamable HTTP upstream
+acc-mcp serve --server-url http://localhost:3000/mcp --policy acc-mcp.yaml
+
+# Fetch and save the upstream tool snapshot without starting a proxy
+acc-mcp serve --server-url http://localhost:3000/mcp --snapshot-only
+```
+
+Calls requiring approval or denied by policy are returned as JSON-RPC errors
+with the `GateDecisionResult` in the error data. Use `--dry-run` to record
+decisions while forwarding calls.
+
 ### As Python Library
 
 ```python

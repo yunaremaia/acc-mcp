@@ -17,6 +17,7 @@ from acc_mcp.parser import ACCParser
 from acc_mcp.gateway import Gateway, Policy
 from acc_mcp.risk import RiskEngine
 from acc_mcp.drift import DriftDetector
+from acc_mcp.proxy import MCPProxy
 
 
 class TestACCParser:
@@ -322,3 +323,100 @@ class TestCLI:
         assert ret == 0
         captured = capsys.readouterr()
         assert "fs.delete" in captured.out
+
+
+class FakeTransport:
+    def __init__(self):
+        self.notifications = []
+        self.requests = []
+        self.responses = {
+            "initialize": {
+                "jsonrpc": "2.0",
+                "id": "client-init",
+                "result": {"protocolVersion": "2025-03-26", "capabilities": {}},
+            },
+            "tools/list": {
+                "jsonrpc": "2.0",
+                "id": "__acc_mcp_tools_list__",
+                "result": {
+                    "tools": [
+                        {
+                            "name": "read_file",
+                            "inputSchema": {"type": "object"},
+                            "annotations": {
+                                "x-agent-capability": {
+                                    "scope": "fs.read",
+                                    "risk": {"level": "low"},
+                                }
+                            },
+                        },
+                        {
+                            "name": "delete_file",
+                            "inputSchema": {"type": "object"},
+                            "annotations": {
+                                "x-agent-capability": {
+                                    "scope": "fs.delete",
+                                    "risk": {"level": "critical"},
+                                    "approval": {"required": True, "prompt": "Confirm"},
+                                }
+                            },
+                        },
+                    ]
+                },
+            },
+        }
+
+    def request(self, message):
+        self.requests.append(message)
+        if message["method"] == "tools/call":
+            return {"jsonrpc": "2.0", "id": message["id"], "result": {"content": []}}
+        return self.responses[message["method"]]
+
+    def notify(self, message):
+        self.notifications.append(message)
+
+    def close(self):
+        pass
+
+
+class TestMCPProxy:
+    def test_tools_list_preserves_upstream_annotations(self):
+        transport = FakeTransport()
+        proxy = MCPProxy(transport, Gateway())
+        response = proxy.handle(
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+        )
+        assert response["result"]["protocolVersion"] == "2025-03-26"
+        listed = proxy.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+        assert listed["result"]["tools"][1]["annotations"]["x-agent-capability"]["scope"] == "fs.delete"
+
+    def test_approval_required_call_returns_jsonrpc_error_without_forwarding(self):
+        transport = FakeTransport()
+        proxy = MCPProxy(transport, Gateway())
+        proxy.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+        response = proxy.handle(
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "delete_file", "arguments": {}},
+            }
+        )
+        assert response["error"]["code"] == -32003
+        assert response["error"]["data"]["requires_approval"] is True
+        assert not any(request["method"] == "tools/call" for request in transport.requests)
+
+    def test_dry_run_forwards_blocked_call(self):
+        transport = FakeTransport()
+        proxy = MCPProxy(transport, Gateway(), dry_run=True)
+        proxy.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+        response = proxy.handle(
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "delete_file", "arguments": {}},
+            }
+        )
+        assert response["result"] == {"content": []}
+        assert any(request["method"] == "tools/call" for request in transport.requests)

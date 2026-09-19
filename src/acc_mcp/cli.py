@@ -13,6 +13,8 @@ from acc_mcp.models import MCPTool
 from acc_mcp.parser import ACCParser
 from acc_mcp.gateway import Gateway, Policy
 from acc_mcp.drift import DriftDetector
+from acc_mcp.proxy import MCPProxy
+from acc_mcp.transport import StdioTransport, StreamableHTTPTransport
 
 
 def cmd_inspect(args: argparse.Namespace) -> int:
@@ -98,6 +100,38 @@ def cmd_validate_policy(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_serve(args: argparse.Namespace) -> int:
+    """Run an ACC-enforcing MCP proxy."""
+    if bool(args.server_cmd) == bool(args.server_url):
+        print("Exactly one of --server-cmd or --server-url is required", file=sys.stderr)
+        return 2
+    try:
+        policy = Policy.from_yaml(args.policy) if args.policy else Policy.standard()
+        transport = (
+            StdioTransport(args.server_cmd)
+            if args.server_cmd
+            else StreamableHTTPTransport(args.server_url)
+        )
+        proxy = MCPProxy(
+            transport,
+            Gateway(policy=policy),
+            dry_run=args.dry_run,
+            report_path=args.report_json,
+        )
+        if args.snapshot_only:
+            snapshot_path = args.snapshot_output or "tools.snapshot.json"
+            with open(snapshot_path, "w", encoding="utf-8") as output:
+                json.dump(proxy.snapshot(), output, indent=2)
+            print(f"Snapshot saved to {snapshot_path}")
+            transport.close()
+            return 0
+        proxy.run()
+        return 0
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        print(f"Unable to start gateway: {exc}", file=sys.stderr)
+        return 2
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="acc-mcp", description="ACC v1 MCP binding")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -124,6 +158,17 @@ def main() -> int:
     check_parser.add_argument("--baseline", required=True, help="Baseline snapshot JSON")
     check_parser.add_argument("tools_file", help="Current tools JSON file")
     check_parser.set_defaults(func=cmd_check)
+
+    serve_parser = subparsers.add_parser("serve", help="Run a live MCP enforcement proxy")
+    upstream = serve_parser.add_mutually_exclusive_group(required=True)
+    upstream.add_argument("--server-cmd", help="MCP server command to run over stdio")
+    upstream.add_argument("--server-url", help="MCP Streamable HTTP endpoint")
+    serve_parser.add_argument("--policy", help="YAML enforcement policy")
+    serve_parser.add_argument("--dry-run", action="store_true", help="Log decisions without blocking")
+    serve_parser.add_argument("--report-json", help="Write decisions as a JSON array")
+    serve_parser.add_argument("--snapshot-only", action="store_true", help="Fetch tools and exit")
+    serve_parser.add_argument("--snapshot-output", help="Snapshot path (default: tools.snapshot.json)")
+    serve_parser.set_defaults(func=cmd_serve)
 
     args = parser.parse_args()
     if args.validate_policy:
