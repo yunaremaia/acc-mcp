@@ -39,6 +39,10 @@ MCP Client → acc-mcp Gateway → Upstream MCP Server
 ```bash
 pip install acc-mcp
 
+# Verify the installed package version
+acc-mcp --version
+# acc-mcp version 0.1.0
+
 # Start gateway in front of an MCP server
 acc-mcp gateway --upstream "npx -y @modelcontextprotocol/server-filesystem /tmp" --mode enforce
 
