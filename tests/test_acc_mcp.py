@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import sys
+
 import pytest
 
 from acc_mcp.models import (
@@ -277,6 +279,19 @@ class TestDriftDetector:
 
 
 class TestCLI:
+    @pytest.mark.parametrize("flag", ["--version", "-v"])
+    def test_version_uses_installed_package_metadata(self, capsys, monkeypatch, flag):
+        from importlib.metadata import version
+        from acc_mcp.cli import main
+
+        monkeypatch.setattr(sys, "argv", ["acc-mcp", flag])
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+        assert exc_info.value.code == 0
+        assert capsys.readouterr().out == f"acc-mcp version {version('acc-mcp')}\n"
+
     def test_validate_policy(self, tmp_path, capsys):
         path = tmp_path / "policy.yaml"
         path.write_text("block_tools:\n  - delete_file\n")
