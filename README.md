@@ -37,7 +37,7 @@ MCP Client → acc-mcp Gateway → Upstream MCP Server
 ## Quick Start
 
 ```bash
-pip install acc-mcp
+pip install git+https://github.com/yunaremaia/acc-mcp.git
 
 # Verify the installed package version
 acc-mcp --version
