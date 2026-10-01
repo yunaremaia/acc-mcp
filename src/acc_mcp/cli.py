@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import argparse
+from importlib.metadata import version
 import json
 import sys
 
 import yaml
 
-from acc_mcp import __version__
 from acc_mcp.models import MCPTool
 from acc_mcp.parser import ACCParser
 from acc_mcp.gateway import Gateway, Policy
@@ -134,7 +134,12 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(prog="acc-mcp", description="ACC v1 MCP binding")
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
+        version=f"%(prog)s version {version('acc-mcp')}",
+    )
     parser.add_argument(
         "--validate-policy",
         metavar="PATH",
