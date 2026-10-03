@@ -34,11 +34,19 @@ MCP Client → acc-mcp Gateway → Upstream MCP Server
                   └─ Audit Log (hash-chained, optionally signed)
 ```
 
-## Quick Start
+## Install
 
 ```bash
 pip install git+https://github.com/yunaremaia/acc-mcp.git
+```
 
+> **Not on PyPI yet.** `acc-mcp` has no PyPI release — the project page returns
+> 404 — so `pip install acc-mcp` does not resolve. Install from Git with the
+> command above until the first release is published.
+
+## Quick Start
+
+```bash
 # Verify the installed package version
 acc-mcp --version
 # acc-mcp version 0.1.0
