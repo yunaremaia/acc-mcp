@@ -1,0 +1,76 @@
+[
+  {
+    "name": "read_file",
+    "description": "Read a file from the filesystem",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string" }
+      },
+      "required": ["path"]
+    },
+    "annotations": {
+      "x-agent-capability": {
+        "version": 1,
+        "enabled": true,
+        "scope": "fs.read",
+        "risk": { "level": "low" },
+        "subject": { "required": false },
+        "approval": { "required": false },
+        "execution": { "readonly": true, "idempotent": true }
+      }
+    }
+  },
+  {
+    "name": "write_file",
+    "description": "Write a file to the filesystem",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string" },
+        "contents": { "type": "string" }
+      },
+      "required": ["path", "contents"]
+    },
+    "annotations": {
+      "x-agent-capability": {
+        "version": 1,
+        "enabled": true,
+        "scope": "fs.write",
+        "risk": { "level": "medium" },
+        "subject": { "required": false },
+        "approval": { "required": false },
+        "execution": { "readonly": false, "idempotent": true }
+      }
+    }
+  },
+  {
+    "name": "delete_file",
+    "description": "Delete a file from the filesystem",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string" }
+      },
+      "required": ["path"]
+    },
+    "annotations": {
+      "x-agent-capability": {
+        "version": 1,
+        "enabled": true,
+        "scope": "fs.delete",
+        "risk": { "level": "critical" },
+        "subject": { "required": true },
+        "approval": {
+          "required": true,
+          "prompt": "Confirm deletion of {path}"
+        },
+        "execution": { "readonly": false, "idempotent": false }
+      }
+    }
+  },
+  {
+    "name": "server_info",
+    "description": "Report the server version and uptime"
+  }
+]

@@ -131,7 +131,15 @@ def cmd_serve(args: argparse.Namespace) -> int:
         return 2
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """Build the CLI argument parser.
+
+    Kept separate from :func:`main` so the parser can be introspected without
+    running a command: ``tests/test_readme_quickstart.py`` asserts that every
+    subcommand and flag the README documents is registered here. Inlining this
+    into ``main`` would make the README/CLI contract untestable, which is how
+    ``gateway`` and ``drift-check`` came to be documented without existing.
+    """
     parser = argparse.ArgumentParser(prog="acc-mcp", description="ACC v1 MCP binding")
     parser.add_argument(
         "-v",
@@ -174,6 +182,11 @@ def main() -> int:
     serve_parser.add_argument("--snapshot-output", help="Snapshot path (default: tools.snapshot.json)")
     serve_parser.set_defaults(func=cmd_serve)
 
+    return parser
+
+
+def main() -> int:
+    parser = build_parser()
     args = parser.parse_args()
     if args.validate_policy:
         return cmd_validate_policy(args)
