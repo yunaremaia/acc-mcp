@@ -25,6 +25,7 @@ class Policy:
         "approval_required_scopes",
         "approval_required_tools",
         "block_tools",
+        "block_critical",
     }
 
     def __init__(
@@ -33,11 +34,13 @@ class Policy:
         approval_scopes: list[str] | None = None,
         approval_tools: list[str] | None = None,
         block_tools: list[str] | None = None,
+        block_critical: bool = True,
     ):
         self.risk_overrides = risk_overrides or {}
         self.approval_scopes = approval_scopes or []
         self.approval_tools = approval_tools or []
         self.block_tools = block_tools or []
+        self.block_critical = block_critical
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Policy":
@@ -90,17 +93,22 @@ class Policy:
                 raise ValueError(f"Policy key '{key}' must be a list of strings")
             list_values[key] = value
 
+        raw_block_critical = data.get("block_critical", True)
+        if not isinstance(raw_block_critical, bool):
+            raise ValueError("Policy key 'block_critical' must be a boolean")
+
         return cls(
             risk_overrides=risk_overrides,
             approval_scopes=list_values["approval_required_scopes"],
             approval_tools=list_values["approval_required_tools"],
             block_tools=list_values["block_tools"],
+            block_critical=raw_block_critical,
         )
 
     @classmethod
     def standard(cls) -> "Policy":
         """Standard policy: block critical, require approval for high."""
-        return cls()
+        return cls(block_critical=True)
 
 
 class Gateway:
@@ -132,6 +140,32 @@ class Gateway:
         scope = self.risk_engine.get_scope(declaration)
         if scope and scope in self.policy.risk_overrides:
             risk = self.policy.risk_overrides[scope]
+
+        # A declaration that sets `enabled: false` is the capability author
+        # withdrawing the capability (ACC v1 §4.2: "the operation MUST NOT be
+        # exposed as an agent-callable capability"). Nothing overrides it: not
+        # an operator allow-list, not an approval prompt.
+        if declaration is not None and not declaration.enabled:
+            return GateDecisionResult(
+                tool_name=tool.name,
+                allowed=False,
+                risk_level=risk,
+                reason=f"Tool '{tool.name}' is disabled by its ACC declaration (enabled=false)",
+                requires_approval=False,
+            )
+
+        # Critical risk is denied, not merely gated on approval. An approval
+        # prompt is only meaningful for a call a human could still wave through;
+        # the README risk table and Policy.standard() both document `critical`
+        # as BLOCK. Set `block_critical: false` to opt out.
+        if risk == RiskLevel.CRITICAL and self.policy.block_critical:
+            return GateDecisionResult(
+                tool_name=tool.name,
+                allowed=False,
+                risk_level=risk,
+                reason=f"Tool '{tool.name}' is blocked: critical risk",
+                requires_approval=False,
+            )
 
         # Check blocked list
         if tool.name in self.policy.block_tools:

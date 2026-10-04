@@ -96,6 +96,10 @@ Tools declare ACC metadata via the `annotations` field:
 | `high` | WARN | Write operations, non-idempotent |
 | `critical` | BLOCK | Destructive, irreversible operations |
 
+A tool whose declaration sets `enabled: false` is also blocked: the capability
+author has withdrawn it, so it is neither callable nor advertised by the proxy
+(ACC v1 §4.2).
+
 Override with policy file:
 
 ```yaml
@@ -110,6 +114,10 @@ approval_required_tools:
   - "execute_command"
 block_tools:
   - "delete_all"
+
+# Deny `critical` tools outright (default: true). Set to false to let them
+# through the approval gate instead of refusing them.
+block_critical: true
 ```
 
 Validate a policy before starting the gateway:
@@ -129,7 +137,8 @@ acc-mcp drift-check --baseline baseline.json
 ```
 
 Drift categories:
-- **BREAKING**: Tool removed, required param added, type narrowed
+- **BREAKING**: Tool removed, required param added, type narrowed, an approval
+  requirement removed, `execution.readonly` dropped, or a tool disabled
 - **DEGRADED**: Description changed, optional param added
 - **COMPATIBLE**: New tool added, output field added
 

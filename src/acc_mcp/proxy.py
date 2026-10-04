@@ -27,6 +27,21 @@ class MCPProxy:
         self.report_path = report_path
         self.tools: dict[str, MCPTool] = {}
         self.decisions: list[GateDecisionResult] = []
+        self.parser = ACCParser()
+
+    def _is_enabled(self, tool: MCPTool) -> bool:
+        """True when a tool is callable: undeclared tools are, disabled ones are not."""
+        declaration = self.parser.parse_tool(tool)
+        return declaration is None or declaration.enabled
+
+    def _advertised_tools(self) -> list[MCPTool]:
+        """The tools this proxy exposes to the client.
+
+        A tool whose declaration sets ``enabled: false`` is withheld: the
+        gateway already refuses calls to it, and advertising a capability whose
+        every call fails is a contract the client cannot satisfy (ACC v1 §4.2).
+        """
+        return [tool for tool in self.tools.values() if self._is_enabled(tool)]
 
     def _initialize(self, request: dict[str, Any]) -> dict[str, Any]:
         response = self.transport.request(request)
@@ -65,7 +80,7 @@ class MCPProxy:
                 },
             }
         )
-        return [tool.model_dump(by_alias=True) for tool in self.tools.values()]
+        return [tool.model_dump(by_alias=True) for tool in self._advertised_tools()]
 
     def handle(self, request: dict[str, Any]) -> dict[str, Any] | None:
         method = request.get("method")
@@ -78,7 +93,7 @@ class MCPProxy:
             return {
                 "jsonrpc": "2.0",
                 "id": request.get("id"),
-                "result": {"tools": [tool.model_dump(by_alias=True) for tool in self.tools.values()]},
+                "result": {"tools": [tool.model_dump(by_alias=True) for tool in self._advertised_tools()]},
             }
         if method != "tools/call":
             if "id" not in request:

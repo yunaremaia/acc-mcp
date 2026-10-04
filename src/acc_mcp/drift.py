@@ -150,6 +150,54 @@ class DriftDetector:
                     severity="compatible",
                 ))
 
+            # `execution.readonly` and `enabled` are security controls too:
+            # both record a restriction the baseline was approved under.
+            # snapshot() has always persisted `readonly`, so a tool approved as
+            # read-only could become write-capable while every compared field
+            # stayed identical and the gate reported clean. Same rule as
+            # approval.required: losing the restriction is breaking, gaining it
+            # is compatible.
+            if base_decl.execution.readonly and not curr_decl.execution.readonly:
+                breaking.append(DriftItem(
+                    tool_name=name,
+                    change_type="modified",
+                    field="execution.readonly",
+                    old_value=True,
+                    new_value=False,
+                    severity="breaking",
+                ))
+            elif not base_decl.execution.readonly and curr_decl.execution.readonly:
+                compatible.append(DriftItem(
+                    tool_name=name,
+                    change_type="modified",
+                    field="execution.readonly",
+                    old_value=False,
+                    new_value=True,
+                    severity="compatible",
+                ))
+
+            if base_decl.enabled and not curr_decl.enabled:
+                # The capability the baseline advertised is gone. The gateway
+                # refuses such a call (enabled=false), so a consumer pinned to
+                # the baseline sees a hard failure, not a softer one.
+                breaking.append(DriftItem(
+                    tool_name=name,
+                    change_type="modified",
+                    field="enabled",
+                    old_value=True,
+                    new_value=False,
+                    severity="breaking",
+                ))
+            elif not base_decl.enabled and curr_decl.enabled:
+                compatible.append(DriftItem(
+                    tool_name=name,
+                    change_type="modified",
+                    field="enabled",
+                    old_value=False,
+                    new_value=True,
+                    severity="compatible",
+                ))
+
         has_drift = bool(breaking or degraded)
         return DriftReport(
             drifted=has_drift,
