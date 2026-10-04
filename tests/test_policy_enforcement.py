@@ -21,6 +21,9 @@ exists. These tests pin the enforcement so the gap cannot reopen silently.
 
 from __future__ import annotations
 
+import json
+import sys
+
 import pytest
 
 from acc_mcp.drift import DriftDetector
@@ -463,3 +466,212 @@ class TestDriftComparesSecurityRelevantFields:
 
         assert report.drifted is True
         assert expected_field in {i.field for i in report.breaking}
+
+
+class TestRiskVerdictComesFromTheGatewayDecision:
+    """`check()` must classify risk drift by what the gateway DECIDES.
+
+    Issue #53: `risk.level` going `critical` -> `low` was filed under
+    `compatible`, so `has_drift` stayed False, `acc-mcp check` printed "No
+    drift detected." and exited 0 while the gateway went from blocked to
+    allowed on the same declaration.
+
+    The severity cannot come from the risk ordinal alone. `Policy` can pin a
+    scope's risk (`risk_overrides`), refuse a tool by name (`block_tools`) or
+    take approval rather than refusal for `critical` (`block_critical: false`),
+    and in each of those the ordinal says nothing about what the gateway
+    enforces. So the comparison is the decision itself: a tool the gateway
+    enforces less than it enforced at the baseline is drift, exactly as
+    `approval.required` and `execution.readonly` already were.
+    """
+
+    @staticmethod
+    def _delete_file(level: str) -> MCPTool:
+        # `approval.required` is false on both sides in every fixture below, so
+        # risk is the only variable.
+        return make_tool(
+            "delete_file",
+            {"scope": "db.wipe", "risk": {"level": level}, "approval": {"required": False}},
+        )
+
+    def test_critical_to_low_is_breaking(self):
+        # The exact reproduction from the issue report: one field changes,
+        # `x-agent-capability.risk.level`, critical -> low.
+        baseline = [self._delete_file("critical")]
+        current = [self._delete_file("low")]
+
+        # Control: the gateway really does flip on this pair, which is what
+        # makes the drift verdict actionable rather than cosmetic.
+        assert Gateway().evaluate(baseline[0]).allowed is False
+        assert Gateway().evaluate(current[0]).allowed is True
+
+        report = DriftDetector().check(baseline, current)
+
+        assert report.drifted is True
+        assert [(i.field, i.old_value, i.new_value) for i in report.breaking] == [
+            ("risk", "critical", "low")
+        ]
+        assert report.compatible == []
+
+    def test_critical_to_low_is_breaking_through_the_snapshot_round_trip(self):
+        # The CLI path: `acc-mcp check` compares snapshots, and the reported
+        # symptom was that path printing "No drift detected." and exiting 0.
+        detector = DriftDetector()
+        baseline = detector.snapshot([self._delete_file("critical")])
+        current = detector.snapshot([self._delete_file("low")])
+
+        report = detector.check_from_snapshots(baseline, current)
+
+        assert report.drifted is True
+        assert [(i.field, i.severity) for i in report.breaking] == [("risk", "breaking")]
+
+    def test_de_escalation_between_two_permitted_levels_stays_compatible(self):
+        # The genuine tightening that must not regress: under
+        # Policy.standard() the gateway decides medium and low identically
+        # (allowed, no approval), so nothing was loosened.
+        report = DriftDetector().check([self._delete_file("medium")], [self._delete_file("low")])
+
+        assert report.drifted is False
+        assert [(i.field, i.old_value, i.new_value) for i in report.compatible] == [
+            ("risk", "medium", "low")
+        ]
+        assert report.breaking == []
+
+    def test_approval_requirement_being_added_stays_compatible(self):
+        # The sibling tightening, unchanged: gaining a restriction is reported
+        # but must not fail the gate.
+        baseline = [make_tool("delete_file", {"scope": "db.wipe", "risk": {"level": "high"}})]
+        current = [
+            make_tool(
+                "delete_file",
+                {"scope": "db.wipe", "risk": {"level": "high"}, "approval": {"required": True}},
+            )
+        ]
+
+        report = DriftDetector().check(baseline, current)
+
+        assert report.drifted is False
+        assert [(i.field, i.severity) for i in report.compatible] == [
+            ("approval.required", "compatible")
+        ]
+
+    def test_risk_escalation_is_still_breaking(self):
+        # Positive control for the whole block: the direction that was already
+        # breaking must stay breaking, so the fix cannot have just inverted the
+        # comparison.
+        report = DriftDetector().check([self._delete_file("medium")], [self._delete_file("critical")])
+
+        assert report.drifted is True
+        assert [(i.field, i.severity) for i in report.breaking] == [("risk", "breaking")]
+
+    def test_de_escalation_is_compatible_when_the_policy_blocks_the_tool_by_name(self):
+        # The case that decides between the two implementations. With the tool
+        # on `block_tools` the gateway refuses it at BOTH levels, so the
+        # de-escalation loosens nothing and reporting it breaking would fail a
+        # CI gate on a change with no effect on enforcement. An ordinal-only
+        # verdict cannot see this: it reads the declaration, not the decision.
+        policy = Policy(block_tools=["delete_file"])
+        baseline = [self._delete_file("critical")]
+        current = [self._delete_file("low")]
+
+        gateway = Gateway(policy=policy)
+        assert gateway.evaluate(baseline[0]).allowed is False
+        assert gateway.evaluate(current[0]).allowed is False
+
+        report = DriftDetector(policy=policy).check(baseline, current)
+
+        assert report.drifted is False
+        assert [(i.field, i.severity) for i in report.compatible] == [("risk", "compatible")]
+
+        # ...and the same declaration change under a policy that does not block
+        # it by name is breaking, so the previous assertion is about the
+        # decision and not about the detector refusing to look.
+        assert DriftDetector(policy=Policy()).check(baseline, current).drifted is True
+
+    def test_de_escalation_is_breaking_when_critical_takes_approval_not_refusal(self):
+        # `block_critical: false` is the threshold-below-critical case: nothing
+        # is refused outright, so a blocked-vs-allowed comparison would see no
+        # difference. The human gate is what disappears here, and the gateway
+        # still enforces less than it did at the baseline.
+        policy = Policy(block_critical=False)
+        baseline = [self._delete_file("critical")]
+        current = [self._delete_file("low")]
+
+        gateway = Gateway(policy=policy)
+        assert gateway.evaluate(baseline[0]).requires_approval is True
+        assert gateway.evaluate(current[0]).requires_approval is False
+
+        report = DriftDetector(policy=policy).check(baseline, current)
+
+        assert report.drifted is True
+        assert [(i.field, i.old_value, i.new_value) for i in report.breaking] == [
+            ("risk", "critical", "low")
+        ]
+
+    def test_check_takes_the_policy_the_gateway_runs_with(self, tmp_path, monkeypatch, capsys):
+        # The CLI path, and the reason `check` grew a `--policy` flag: the same
+        # declaration change exits 1 under the default policy and 0 when the
+        # tool is refused by name. A gate reading only the exit code has to be
+        # able to ask the question against the policy in force.
+        detector = DriftDetector()
+        baseline_path = tmp_path / "baseline.json"
+        detector.save_snapshot(detector.snapshot([self._delete_file("critical")]), baseline_path)
+        tools_path = tmp_path / "current.json"
+        tools_path.write_text(json.dumps([
+            {
+                "name": "delete_file",
+                "description": "Delete a file",
+                "annotations": {
+                    "x-agent-capability": {
+                        "scope": "db.wipe",
+                        "risk": {"level": "low"},
+                        "approval": {"required": False},
+                    }
+                },
+            }
+        ]))
+        policy_path = tmp_path / "policy.yaml"
+        policy_path.write_text("block_tools:\n  - delete_file\n")
+
+        from acc_mcp.cli import main
+
+        monkeypatch.setattr(
+            sys, "argv", ["acc-mcp", "check", "--baseline", str(baseline_path), str(tools_path)]
+        )
+        assert main() == 1
+        assert "Drift detected!" in capsys.readouterr().out
+
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "acc-mcp", "check", "--baseline", str(baseline_path),
+                "--policy", str(policy_path), str(tools_path),
+            ],
+        )
+        assert main() == 0
+        assert "No drift detected." in capsys.readouterr().out
+
+    def test_check_rejects_an_invalid_policy_instead_of_crashing(self, tmp_path, monkeypatch):
+        # The flag parses YAML, so a typo in the operator's policy file must be
+        # a diagnostic, not a traceback.
+        detector = DriftDetector()
+        baseline_path = tmp_path / "baseline.json"
+        detector.save_snapshot(detector.snapshot([self._delete_file("critical")]), baseline_path)
+        tools_path = tmp_path / "current.json"
+        tools_path.write_text("[]")
+        policy_path = tmp_path / "policy.yaml"
+        policy_path.write_text("block_critical: maybe\n")
+
+        from acc_mcp.cli import main
+
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "acc-mcp", "check", "--baseline", str(baseline_path),
+                "--policy", str(policy_path), str(tools_path),
+            ],
+        )
+
+        assert main() == 2

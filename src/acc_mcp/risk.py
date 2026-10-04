@@ -16,9 +16,16 @@ class RiskEngine:
         """
         if declaration is not None:
             return declaration.risk.level
+        return self.classify_name(tool.name)
 
-        # Heuristic: classify based on tool name patterns
-        name_lower = tool.name.lower()
+    def classify_name(self, name: str) -> RiskLevel:
+        """Heuristic risk from a tool name, for tools with no declaration.
+
+        Split out so the gateway can classify a declaration-less tool from a
+        bare name, the same way `classify` does, without a caller having to
+        fabricate an `MCPTool` to reach it.
+        """
+        name_lower = name.lower()
         if any(kw in name_lower for kw in ("delete", "remove", "drop", "destroy", "kill")):
             return RiskLevel.HIGH
         if any(kw in name_lower for kw in ("write", "create", "update", "insert", "exec", "run")):
