@@ -367,10 +367,15 @@ class FakeTransport:
                         {
                             "name": "delete_file",
                             "inputSchema": {"type": "object"},
+                            # `high`, not `critical`: these tests cover the
+                            # *approval* path, and a `critical` tool is now
+                            # denied outright before approval is considered.
+                            # The critical deny is pinned in
+                            # tests/test_policy_enforcement.py.
                             "annotations": {
                                 "x-agent-capability": {
                                     "scope": "fs.delete",
-                                    "risk": {"level": "critical"},
+                                    "risk": {"level": "high"},
                                     "approval": {"required": True, "prompt": "Confirm"},
                                 }
                             },
