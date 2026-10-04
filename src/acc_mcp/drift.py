@@ -5,13 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
 
 from acc_mcp.models import (
     DriftItem,
     DriftReport,
     MCPTool,
-    ACCDeclaration,
 )
 from acc_mcp.parser import ACCParser
 
@@ -55,10 +53,13 @@ class DriftDetector:
         baseline_tools: list[MCPTool],
         current_tools: list[MCPTool],
     ) -> DriftReport:
-        """Compare current tools against baseline and report drift."""
-        baseline_map = {t.name: t for t in baseline_tools}
-        current_map = {t.name: t for t in current_tools}
+        """Compare current tools against baseline and report drift.
 
+        Drift is computed over ACC declarations only: a tool without an
+        ``x-agent-capability`` annotation is outside the contract and is not
+        tracked. A tool that carried a declaration in the baseline and lost it
+        in the current set is reported as a breaking removal.
+        """
         baseline_decls = self.parser.parse_tools(baseline_tools)
         current_decls = self.parser.parse_tools(current_tools)
 
@@ -163,23 +164,23 @@ class DriftDetector:
         current_snapshot: dict[str, dict],
     ) -> DriftReport:
         """Compare two snapshot dicts and report drift."""
-        # Reconstruct minimal MCPTool objects from snapshot for the check
-        baseline_tools = [
-            MCPTool(
-                name=name,
-                description=data.get("description", ""),
-                annotations={"x-agent-capability": json.loads(data["description"])} if data.get("description") else {},
+        # Reconstruct minimal MCPTool objects from snapshot for the check.
+        # A snapshot written by snapshot() always carries a parseable
+        # declaration in "description"; an entry without one yields an
+        # undeclared tool that drift detection does not track.
+        def to_tool(name: str, data: dict) -> MCPTool:
+            description = data.get("description", "")
+            annotations = (
+                {"x-agent-capability": json.loads(description)} if description else {}
             )
-            for name, data in baseline_snapshot.items()
-        ]
-        current_tools = [
-            MCPTool(
+            return MCPTool(
                 name=name,
-                description=data.get("description", ""),
-                annotations={"x-agent-capability": json.loads(data["description"])} if data.get("description") else {},
+                description=description,
+                annotations=annotations,
             )
-            for name, data in current_snapshot.items()
-        ]
+
+        baseline_tools = [to_tool(name, data) for name, data in baseline_snapshot.items()]
+        current_tools = [to_tool(name, data) for name, data in current_snapshot.items()]
         return self.check(baseline_tools, current_tools)
 
     @staticmethod

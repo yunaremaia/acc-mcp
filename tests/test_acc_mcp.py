@@ -10,7 +10,6 @@ import pytest
 from acc_mcp.models import (
     ACCDeclaration,
     ApprovalConfig,
-    DriftReport,
     MCPTool,
     RiskConfig,
     RiskLevel,

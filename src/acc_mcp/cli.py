@@ -9,7 +9,6 @@ import sys
 
 import yaml
 
-from acc_mcp.models import MCPTool
 from acc_mcp.parser import ACCParser
 from acc_mcp.gateway import Gateway, Policy
 from acc_mcp.drift import DriftDetector
@@ -73,7 +72,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         print("No drift detected.")
         return 0
 
-    print(f"Drift detected!")
+    print("Drift detected!")
     if report.breaking:
         print(f"\n  Breaking changes ({len(report.breaking)}):")
         for item in report.breaking:
