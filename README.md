@@ -213,7 +213,23 @@ Categories, as classified by `DriftDetector.check`:
   claims a different scope than the one that was approved.
 - **COMPATIBLE** — a new tool was declared, or a restriction was *added*
   (`approval.required`, `execution.readonly`, `enabled`) or the risk level was
-  lowered.
+  lowered without changing what the gateway enforces.
+
+A `risk.level` **lowering** is classified by the gateway's decision, not by the
+order of the two levels, because the two only agree under the default policy.
+`check` asks the same enforcement path the gateway uses what it decides for the
+baseline declaration and for the current one, and reports the change as breaking
+when the tool becomes less restricted: refused → allowed, or approval-gated →
+allowed. Under `Policy.standard()` that is `critical` → anything lower. Under a
+policy it can differ in both directions — a tool already on `block_tools` is
+refused at every level, so lowering its risk is reported as compatible, and
+`block_critical: false` turns the `critical` refusal into an approval gate, so
+the drop to `low` is breaking because the human gate disappears.
+
+`check --policy acc-mcp.yaml` classifies against that policy file; without the
+flag `Policy.standard()` applies, matching a gateway started without one. Pass
+the same file the gateway runs with, or the verdict answers a question about a
+policy the gateway is not using.
 
 `check` exits 1 when there is any breaking or degraded item. Compatible-only
 changes exit 0: `DriftReport.drifted` is `bool(breaking or degraded)`. Inspect

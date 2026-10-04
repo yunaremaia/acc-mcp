@@ -6,19 +6,39 @@ import hashlib
 import json
 from pathlib import Path
 
+from acc_mcp.gateway import Gateway, Policy
 from acc_mcp.models import (
     DriftItem,
     DriftReport,
+    GateDecisionResult,
     MCPTool,
 )
 from acc_mcp.parser import ACCParser
 
 
+def _enforcement_rank(decision: GateDecisionResult) -> int:
+    """How hard the gateway enforces a call: refused > approval > allowed.
+
+    Higher is stricter. `risk_level` and `reason` are deliberately excluded:
+    both change with the risk ordinal while enforcement stays identical, so
+    ranking on them would report drift where the gateway behaves exactly as it
+    did at the baseline.
+    """
+    if not decision.allowed:
+        return 2
+    return 1 if decision.requires_approval else 0
+
+
 class DriftDetector:
     """Detect drift between MCP tool snapshots."""
 
-    def __init__(self):
+    def __init__(self, policy: Policy | None = None):
         self.parser = ACCParser()
+        # The drift verdict is a claim about what the gateway will do, so it is
+        # derived from the gateway itself rather than from the declarations
+        # alone. Defaulting to the standard policy keeps a bare
+        # `DriftDetector()` aligned with `Gateway()`.
+        self.gateway = Gateway(policy=policy)
 
     def snapshot(self, tools: list[MCPTool]) -> dict[str, dict]:
         """Create a snapshot of tool ACC declarations."""
@@ -109,26 +129,40 @@ class DriftDetector:
             if base_decl.risk.level != curr_decl.risk.level:
                 base_risk = base_decl.risk.level.value
                 curr_risk = curr_decl.risk.level.value
-                # Risk escalation is breaking
+                # Escalation is breaking on the ordinal, unconditionally: the
+                # baseline was approved at a lower declared level, and that
+                # claim changed whatever the policy happens to do about it.
+                #
+                # De-escalation is NOT decided by the ordinal. Issue #53 filed
+                # `critical` -> `low` under Policy.standard() as `compatible`
+                # while the gateway went from refused to allowed, so
+                # `check` printed "No drift detected." and exited 0 on a tool
+                # that had just become callable. The ordinal is also the wrong
+                # question in general, because policy sits between the two
+                # levels: `risk_overrides` can pin a scope, `block_tools` can
+                # refuse a tool whatever its level, and `block_critical:
+                # false` turns the refusal into an approval gate. So the
+                # de-escalation verdict comes from the gateway's own decision
+                # on each declaration -- see `Gateway.decide`, the single
+                # enforcement path `evaluate()` also uses.
+                #
+                # A de-escalation that leaves enforcement unchanged stays
+                # compatible: `medium` -> `low` under the standard policy is a
+                # changed declaration the gateway treats identically.
                 risk_order = {"low": 0, "medium": 1, "high": 2, "critical": 3}
-                if risk_order.get(curr_risk, 0) > risk_order.get(base_risk, 0):
-                    breaking.append(DriftItem(
-                        tool_name=name,
-                        change_type="modified",
-                        field="risk",
-                        old_value=base_risk,
-                        new_value=curr_risk,
-                        severity="breaking",
-                    ))
-                else:
-                    compatible.append(DriftItem(
-                        tool_name=name,
-                        change_type="modified",
-                        field="risk",
-                        old_value=base_risk,
-                        new_value=curr_risk,
-                        severity="compatible",
-                    ))
+                escalated = risk_order.get(curr_risk, 0) > risk_order.get(base_risk, 0)
+                loosened = _enforcement_rank(self.gateway.decide(name, curr_decl)) < (
+                    _enforcement_rank(self.gateway.decide(name, base_decl))
+                )
+                severity = "breaking" if escalated or loosened else "compatible"
+                (breaking if severity == "breaking" else compatible).append(DriftItem(
+                    tool_name=name,
+                    change_type="modified",
+                    field="risk",
+                    old_value=base_risk,
+                    new_value=curr_risk,
+                    severity=severity,
+                ))
 
             if base_decl.approval.required and not curr_decl.approval.required:
                 # Approval removed = breaking (security downgrade)

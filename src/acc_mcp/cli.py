@@ -58,7 +58,16 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
 
 def cmd_check(args: argparse.Namespace) -> int:
     """Check for drift between baseline and current tools."""
-    detector = DriftDetector()
+    try:
+        # A `risk.level` lowering is classified by what the gateway decides for
+        # each declaration, so the policy the gateway runs with is part of the
+        # question. Without --policy, Policy.standard() applies, matching a
+        # gateway started without one.
+        policy = Policy.from_yaml(args.policy) if args.policy else None
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        print(f"Invalid policy: {exc}", file=sys.stderr)
+        return 2
+    detector = DriftDetector(policy=policy)
 
     with open(args.baseline) as f:
         baseline = json.load(f)
@@ -168,6 +177,7 @@ def build_parser() -> argparse.ArgumentParser:
     # check
     check_parser = subparsers.add_parser("check", help="Check for drift")
     check_parser.add_argument("--baseline", required=True, help="Baseline snapshot JSON")
+    check_parser.add_argument("--policy", help="YAML enforcement policy to classify against")
     check_parser.add_argument("tools_file", help="Current tools JSON file")
     check_parser.set_defaults(func=cmd_check)
 

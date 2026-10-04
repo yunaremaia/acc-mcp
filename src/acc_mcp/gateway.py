@@ -8,6 +8,7 @@ from typing import Any
 import yaml
 
 from acc_mcp.models import (
+    ACCDeclaration,
     GateDecisionResult,
     MCPTool,
     RiskLevel,
@@ -128,13 +129,27 @@ class Gateway:
 
         Returns a GateDecisionResult indicating whether the call is allowed.
         """
+        return self.decide(tool.name, self.parser.parse_tool(tool), arguments)
+
+    def decide(
+        self,
+        tool_name: str,
+        declaration: ACCDeclaration | None,
+        arguments: dict[str, Any] | None = None,
+    ) -> GateDecisionResult:
+        """Evaluate an already-parsed ACC declaration against policy.
+
+        This is the single enforcement path. `evaluate()` is this plus the
+        parse; `DriftDetector` calls it directly because it holds declarations
+        rather than `MCPTool` objects. Both must reach the same rules, or the
+        drift report describes enforcement the gateway does not perform (issue
+        #53).
+        """
         arguments = arguments or {}
 
-        # Parse ACC declaration
-        declaration = self.parser.parse_tool(tool)
-
         # Classify risk
-        risk = self.risk_engine.classify(tool, declaration)
+        risk = self.risk_engine.classify_name(tool_name) if declaration is None \
+            else declaration.risk.level
 
         # Apply policy overrides
         scope = self.risk_engine.get_scope(declaration)
@@ -147,10 +162,10 @@ class Gateway:
         # an operator allow-list, not an approval prompt.
         if declaration is not None and not declaration.enabled:
             return GateDecisionResult(
-                tool_name=tool.name,
+                tool_name=tool_name,
                 allowed=False,
                 risk_level=risk,
-                reason=f"Tool '{tool.name}' is disabled by its ACC declaration (enabled=false)",
+                reason=f"Tool '{tool_name}' is disabled by its ACC declaration (enabled=false)",
                 requires_approval=False,
             )
 
@@ -160,20 +175,20 @@ class Gateway:
         # as BLOCK. Set `block_critical: false` to opt out.
         if risk == RiskLevel.CRITICAL and self.policy.block_critical:
             return GateDecisionResult(
-                tool_name=tool.name,
+                tool_name=tool_name,
                 allowed=False,
                 risk_level=risk,
-                reason=f"Tool '{tool.name}' is blocked: critical risk",
+                reason=f"Tool '{tool_name}' is blocked: critical risk",
                 requires_approval=False,
             )
 
         # Check blocked list
-        if tool.name in self.policy.block_tools:
+        if tool_name in self.policy.block_tools:
             return GateDecisionResult(
-                tool_name=tool.name,
+                tool_name=tool_name,
                 allowed=False,
                 risk_level=risk,
-                reason=f"Tool '{tool.name}' is in the blocked list",
+                reason=f"Tool '{tool_name}' is in the blocked list",
                 requires_approval=False,
             )
 
@@ -181,7 +196,7 @@ class Gateway:
         needs_approval = self.risk_engine.requires_approval(risk, declaration)
         if scope and scope in self.policy.approval_scopes:
             needs_approval = True
-        if tool.name in self.policy.approval_tools:
+        if tool_name in self.policy.approval_tools:
             needs_approval = True
 
         approval_prompt = None
@@ -192,10 +207,10 @@ class Gateway:
             except (KeyError, IndexError):
                 approval_prompt = declaration.approval.prompt
         elif needs_approval:
-            approval_prompt = f"Approve call to '{tool.name}' (risk: {risk.value})?"
+            approval_prompt = f"Approve call to '{tool_name}' (risk: {risk.value})?"
 
         return GateDecisionResult(
-            tool_name=tool.name,
+            tool_name=tool_name,
             allowed=True,
             risk_level=risk,
             reason="Approved" if not needs_approval else "Requires approval",
