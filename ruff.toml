@@ -1,0 +1,13 @@
+# Ruff configuration for acc-mcp.
+#
+# The rule set is pinned on purpose: without it `ruff check .` follows ruff's
+# evolving default rules, so CI could redden on an unrelated ruff release.
+#
+# Note on the selector: ruff has no `lint.flake8` section. flake8's `F` codes
+# (F401 unused import, F811 redefinition, F821 undefined name, F841 unused
+# local, ...) are exposed by ruff as the top-level `F` prefix, selected below.
+
+line-length = 100
+
+[lint]
+select = ["F"]

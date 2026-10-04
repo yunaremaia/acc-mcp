@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +11,6 @@ from acc_mcp.models import (
     GateDecisionResult,
     MCPTool,
     RiskLevel,
-    ACCDeclaration,
 )
 from acc_mcp.parser import ACCParser
 from acc_mcp.risk import RiskEngine
