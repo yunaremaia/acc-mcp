@@ -1,0 +1,29 @@
+# Example acc-mcp enforcement policy.
+#
+# Validate it without starting a proxy:
+#     acc-mcp --validate-policy examples/acc-mcp.yaml
+#
+# Apply it to a live server:
+#     acc-mcp serve --server-cmd "npx -y @modelcontextprotocol/server-filesystem /tmp" \
+#         --policy examples/acc-mcp.yaml
+
+# Force a risk level per scope, overriding whatever a tool declares.
+risk_overrides:
+  "fs.read": low
+  "fs.delete": critical
+
+# Any tool in these scopes needs human approval before it runs.
+approval_required_scopes:
+  - "fs.delete"
+
+# ...as does any tool with one of these names, whatever its scope.
+approval_required_tools:
+  - "execute_command"
+
+# Never callable, whatever the declaration says.
+block_tools:
+  - "delete_all"
+
+# Deny `critical` tools outright (default: true). Set to false to let them
+# through the approval gate instead of refusing them.
+block_critical: true
