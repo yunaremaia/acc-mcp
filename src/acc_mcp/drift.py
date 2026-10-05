@@ -268,11 +268,11 @@ class DriftDetector:
     @staticmethod
     def save_snapshot(snapshot: dict[str, dict], path: str | Path) -> None:
         """Save a snapshot to a JSON file."""
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(snapshot, f, indent=2)
 
     @staticmethod
     def load_snapshot(path: str | Path) -> dict[str, dict]:
         """Load a snapshot from a JSON file."""
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             return json.load(f)
