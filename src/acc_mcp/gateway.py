@@ -46,7 +46,7 @@ class Policy:
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Policy":
         """Load policy from a YAML file."""
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
 
         if not isinstance(data, dict):

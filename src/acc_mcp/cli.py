@@ -18,7 +18,7 @@ from acc_mcp.transport import StdioTransport, StreamableHTTPTransport
 
 def cmd_inspect(args: argparse.Namespace) -> int:
     """Inspect ACC declarations from a JSON file of tools."""
-    with open(args.tools_file) as f:
+    with open(args.tools_file, encoding="utf-8") as f:
         raw_tools = json.load(f)
 
     parser = ACCParser()
@@ -42,7 +42,7 @@ def cmd_inspect(args: argparse.Namespace) -> int:
 
 def cmd_snapshot(args: argparse.Namespace) -> int:
     """Create a snapshot of tool ACC declarations."""
-    with open(args.tools_file) as f:
+    with open(args.tools_file, encoding="utf-8") as f:
         raw_tools = json.load(f)
 
     detector = DriftDetector()
@@ -69,9 +69,9 @@ def cmd_check(args: argparse.Namespace) -> int:
         return 2
     detector = DriftDetector(policy=policy)
 
-    with open(args.baseline) as f:
+    with open(args.baseline, encoding="utf-8") as f:
         baseline = json.load(f)
-    with open(args.tools_file) as f:
+    with open(args.tools_file, encoding="utf-8") as f:
         raw_tools = json.load(f)
 
     current = detector.snapshot_raw(raw_tools)
