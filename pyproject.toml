@@ -43,3 +43,11 @@ packages = ["src/acc_mcp"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+
+[tool.coverage.report]
+# Gate: pytest-cov enforces this via pyproject, so CI's
+# `pytest --cov=acc_mcp` fails the run when total coverage drops below it.
+# 76 is floor(76.73) measured on the full suite across the CI matrix
+# (3.11/3.12/3.13). Never round UP — coverage compares without rounding and a
+# higher floor than measured turns CI red.
+fail_under = 76
