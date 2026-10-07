@@ -18,8 +18,12 @@ from acc_mcp.transport import StdioTransport, StreamableHTTPTransport
 
 def cmd_inspect(args: argparse.Namespace) -> int:
     """Inspect ACC declarations from a JSON file of tools."""
-    with open(args.tools_file, encoding="utf-8") as f:
-        raw_tools = json.load(f)
+    try:
+        with open(args.tools_file, encoding="utf-8") as f:
+            raw_tools = json.load(f)
+    except json.JSONDecodeError as exc:
+        print(f"Invalid JSON in tools file: {exc}", file=sys.stderr)
+        return 2
 
     parser = ACCParser()
     tools = parser.from_raw_tools(raw_tools)

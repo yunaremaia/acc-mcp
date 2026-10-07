@@ -70,6 +70,14 @@ class TestACCParser:
         assert len(tools) == 1
         assert tools[0].name == "test"
 
+    def test_parse_tool_with_non_dict_annotation_returns_none(self):
+        tool = MCPTool(
+            name="bad_tool",
+            annotations={"x-agent-capability": "not a dict"},
+        )
+        parser = ACCParser()
+        assert parser.parse_tool(tool) is None
+
 
 class TestRiskEngine:
     def test_classify_with_declaration(self):
@@ -337,6 +345,25 @@ class TestCLI:
         assert ret == 0
         captured = capsys.readouterr()
         assert "fs.delete" in captured.out
+
+    def test_inspect_invalid_json_returns_error(self, tmp_path, capsys):
+        tools_file = tmp_path / "bad.json"
+        tools_file.write_text("not valid json{")
+
+        from acc_mcp.cli import main
+        import sys
+        old_argv = sys.argv
+        try:
+            sys.argv = ["acc-mcp", "inspect", str(tools_file)]
+            ret = main()
+        except SystemExit as e:
+            ret = e.code
+        finally:
+            sys.argv = old_argv
+
+        assert ret == 2
+        captured = capsys.readouterr()
+        assert "Invalid JSON" in captured.err
 
 
 class FakeTransport:

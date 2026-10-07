@@ -15,6 +15,8 @@ class ACCParser:
         raw = tool.annotations.get(self.ACC_ANNOTATION_KEY)
         if raw is None:
             return None
+        if not isinstance(raw, dict):
+            return None
         return ACCDeclaration.model_validate(raw)
 
     def parse_tools(self, tools: list[MCPTool]) -> dict[str, ACCDeclaration]:

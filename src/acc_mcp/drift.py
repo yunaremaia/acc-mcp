@@ -252,9 +252,12 @@ class DriftDetector:
         # undeclared tool that drift detection does not track.
         def to_tool(name: str, data: dict) -> MCPTool:
             description = data.get("description", "")
-            annotations = (
-                {"x-agent-capability": json.loads(description)} if description else {}
-            )
+            annotations: dict = {}
+            if description:
+                try:
+                    annotations = {"x-agent-capability": json.loads(description)}
+                except json.JSONDecodeError:
+                    pass
             return MCPTool(
                 name=name,
                 description=description,

@@ -193,11 +193,13 @@ class TestSnapshotDeclarationIsAlwaysPresent:
         assert all_items(report) == []
         assert report.drifted is False
 
-    def test_malformed_description_in_a_snapshot_raises(self):
-        # The fail-open above is narrow: a non-empty but unparseable
-        # description is not silently ignored, it raises.
+    def test_malformed_description_in_a_snapshot_is_silently_dropped(self):
+        # A non-empty but unparseable description is treated like an empty
+        # one: the tool is undeclared and therefore not tracked.
         detector = DriftDetector()
         crafted = {"delete_file": {"description": "not json"}}
 
-        with pytest.raises(json.JSONDecodeError):
-            detector.check_from_snapshots(crafted, {})
+        report = detector.check_from_snapshots(crafted, {})
+
+        assert all_items(report) == []
+        assert report.drifted is False
