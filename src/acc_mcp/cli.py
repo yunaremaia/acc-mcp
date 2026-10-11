@@ -46,8 +46,12 @@ def cmd_inspect(args: argparse.Namespace) -> int:
 
 def cmd_snapshot(args: argparse.Namespace) -> int:
     """Create a snapshot of tool ACC declarations."""
-    with open(args.tools_file, encoding="utf-8") as f:
-        raw_tools = json.load(f)
+    try:
+        with open(args.tools_file, encoding="utf-8") as f:
+            raw_tools = json.load(f)
+    except json.JSONDecodeError as exc:
+        print(f"Invalid JSON in tools file: {exc}", file=sys.stderr)
+        return 2
 
     detector = DriftDetector()
     snapshot = detector.snapshot_raw(raw_tools)
@@ -73,10 +77,18 @@ def cmd_check(args: argparse.Namespace) -> int:
         return 2
     detector = DriftDetector(policy=policy)
 
-    with open(args.baseline, encoding="utf-8") as f:
-        baseline = json.load(f)
-    with open(args.tools_file, encoding="utf-8") as f:
-        raw_tools = json.load(f)
+    try:
+        with open(args.baseline, encoding="utf-8") as f:
+            baseline = json.load(f)
+    except json.JSONDecodeError as exc:
+        print(f"Invalid JSON in baseline file: {exc}", file=sys.stderr)
+        return 2
+    try:
+        with open(args.tools_file, encoding="utf-8") as f:
+            raw_tools = json.load(f)
+    except json.JSONDecodeError as exc:
+        print(f"Invalid JSON in tools file: {exc}", file=sys.stderr)
+        return 2
 
     current = detector.snapshot_raw(raw_tools)
     report = detector.check_from_snapshots(baseline, current)
